@@ -258,7 +258,7 @@ function SourceItem({ source, isSelected, isFirst, localMcpEnabled, onClick, onD
                 {config.name}
               </div>
             </div>
-            {/* Subtitle - type badge + status badge + tagline/description */}
+            {/* Subtitle - type badge + global badge + status badge + tagline/description */}
             <div className="flex items-center gap-1.5 text-xs text-foreground/70 w-full -mb-[2px] pr-6 min-w-0">
               {/* Type badge */}
               <span className={cn(
@@ -267,6 +267,19 @@ function SourceItem({ source, isSelected, isFirst, localMcpEnabled, onClick, onD
               )}>
                 {getSourceTypeLabel(config.type)}
               </span>
+              {/* Global badge - show if this is a global source */}
+              {source.isGlobal && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <span className="shrink-0 px-1.5 py-0.5 text-[10px] font-medium rounded cursor-default bg-blue-500/10 text-blue-600 dark:text-blue-400">
+                      🌍 Global
+                    </span>
+                  </TooltipTrigger>
+                  <TooltipContent side="top" className="max-w-xs">
+                    <span className="text-xs">Available in all workspaces</span>
+                  </TooltipContent>
+                </Tooltip>
+              )}
               {/* Status badge with tooltip showing connection error details on hover */}
               {statusBadge && (
                 <Tooltip>
