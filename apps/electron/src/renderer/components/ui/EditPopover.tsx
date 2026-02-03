@@ -285,6 +285,9 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
     },
     example: 'Connect to my Craft space',
     overridePlaceholder: 'What would you like to connect?',
+    model: 'sonnet',
+    systemPromptPreset: 'mini',
+    inlineExecution: true,
   }),
 
   // Filter-specific add-source contexts: user is viewing a filtered list and wants to add that type
@@ -303,6 +306,9 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
     },
     example: 'Connect to the OpenAI API',
     overridePlaceholder: 'What API would you like to connect?',
+    model: 'sonnet',
+    systemPromptPreset: 'mini',
+    inlineExecution: true,
   }),
 
   'add-source-mcp': (location) => ({
@@ -320,6 +326,9 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
     },
     example: 'Connect to Linear',
     overridePlaceholder: 'What MCP server would you like to connect?',
+    model: 'sonnet',
+    systemPromptPreset: 'mini',
+    inlineExecution: true,
   }),
 
   'add-source-local': (location) => ({
@@ -338,6 +347,9 @@ const EDIT_CONFIGS: Record<EditContextKey, (location: string) => EditConfig> = {
     },
     example: 'Connect to my Obsidian vault',
     overridePlaceholder: 'What folder would you like to connect?',
+    model: 'sonnet',
+    systemPromptPreset: 'mini',
+    inlineExecution: true,
   }),
 
   'add-skill': (location) => ({
