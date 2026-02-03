@@ -30,8 +30,8 @@ export function CredentialRequest({ request, onResponse, unstyled = false }: Cre
 
   const isBasicAuth = request.mode === 'basic'
   const isValid = isBasicAuth
-    ? username.trim() && password.trim()
-    : value.trim()
+    ? !!(username.trim() && password.trim())
+    : !!value.trim()
 
   const handleSubmit = useCallback(() => {
     if (!isValid) return
@@ -218,6 +218,7 @@ export function CredentialRequest({ request, onResponse, unstyled = false }: Cre
             variant="default"
             className="h-7 gap-1.5"
             disabled={!isValid}
+            title={!isValid ? 'Please enter credentials' : 'Save credentials'}
           >
             <Check className="h-3.5 w-3.5" />
             Save
@@ -236,7 +237,9 @@ export function CredentialRequest({ request, onResponse, unstyled = false }: Cre
           <div className="flex-1" />
 
           <span className="text-[10px] text-muted-foreground">
-            Credentials are encrypted at rest
+            {!isValid
+              ? 'Enter credentials to save'
+              : 'Credentials are encrypted at rest'}
           </span>
         </div>
       </form>
