@@ -41,22 +41,28 @@ export function CredentialRequest({ request, onResponse, unstyled = false }: Cre
   }
 
   const handleSubmit = useCallback(() => {
-    if (!isValid) return
-
-    if (isBasicAuth) {
-      onResponse({
-        type: 'credential',
-        username: username.trim(),
-        password: password.trim(),
-        cancelled: false
-      })
-    } else {
-      onResponse({
-        type: 'credential',
-        value: value.trim(),
-        cancelled: false
-      })
+    console.log('[CredentialRequest] handleSubmit called, isValid:', isValid, 'value:', value)
+    if (!isValid) {
+      console.log('[CredentialRequest] Submit blocked - isValid is false')
+      return
     }
+
+    const response = isBasicAuth
+      ? {
+          type: 'credential' as const,
+          username: username.trim(),
+          password: password.trim(),
+          cancelled: false
+        }
+      : {
+          type: 'credential' as const,
+          value: value.trim(),
+          cancelled: false
+        }
+
+    console.log('[CredentialRequest] Calling onResponse with:', response)
+    onResponse(response)
+    console.log('[CredentialRequest] onResponse called successfully')
   }, [isBasicAuth, username, password, value, isValid, onResponse])
 
   const handleCancel = useCallback(() => {
@@ -64,6 +70,7 @@ export function CredentialRequest({ request, onResponse, unstyled = false }: Cre
   }, [onResponse])
 
   const handleFormSubmit = useCallback((e: React.FormEvent) => {
+    console.log('[CredentialRequest] Form submit triggered')
     e.preventDefault()
     handleSubmit()
   }, [handleSubmit])
