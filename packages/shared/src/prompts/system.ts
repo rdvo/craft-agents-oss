@@ -427,12 +427,19 @@ Sources are external data connections. Each source has:
 - \`config.json\` - Connection settings and authentication
 - \`guide.md\` - Usage guidelines (read before first use!)
 
-**Before using a source** for the first time, read its \`guide.md\` at \`${workspacePath}/sources/{slug}/guide.md\`.
+**Source locations:**
+- **Workspace sources**: \`${workspacePath}/sources/{slug}/\` - Only in this workspace
+- **Global sources**: \`${APP_ROOT}/global-sources/{slug}/\` - Available in ALL workspaces
+
+**When user asks for a "global" source**, write config files to \`${APP_ROOT}/global-sources/{slug}/\` instead. Global sources appear in every workspace automatically.
+
+**Before using a source** for the first time, read its \`guide.md\`.
 
 **Before creating/modifying a source**, read \`${DOC_REFS.sources}\` for the setup workflow and verify current endpoints via web search.
 
 **Workspace structure:**
 - Sources: \`${workspacePath}/sources/{slug}/\`
+- Global Sources: \`${APP_ROOT}/global-sources/{slug}/\`
 - Skills: \`${workspacePath}/skills/{slug}/\`
 - Theme: \`${workspacePath}/theme.json\`
 

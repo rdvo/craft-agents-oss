@@ -53,6 +53,11 @@ import {
   loadSourceConfig,
   saveSourceConfig,
   getSourcePath,
+  loadSourceConfigFromAnyLocation,
+  saveSourceConfigToLocation,
+  getSourcePathFromAnyLocation,
+  findGlobalSourceIcon,
+  getGlobalSourcePath,
 } from '../sources/storage.ts';
 import type { FolderSourceConfig, LoadedSource } from '../sources/types.ts';
 import { getSourceCredentialManager } from '../sources/index.ts';
@@ -769,21 +774,28 @@ After creating or editing a source's config.json, run this tool to:
       debug('[source_test] Testing source:', args.sourceSlug);
 
       try {
-        // Load the source config
-        const source = loadSourceConfig(workspaceRootPath, args.sourceSlug);
-        if (!source) {
+        // Load the source config from either global or workspace location
+        const sourceResult = loadSourceConfigFromAnyLocation(workspaceRootPath, args.sourceSlug);
+        if (!sourceResult) {
           return {
             content: [{
               type: 'text' as const,
-              text: `Source '${args.sourceSlug}' not found.\n\nCreate the source folder at:\n\`~/.craft-agent/workspaces/{workspace}/sources/${args.sourceSlug}/config.json\`\n\nSee \`${DOC_REFS.sources}\` for config format.`,
+              text: `Source '${args.sourceSlug}' not found.\n\nCreate the source folder at:\n\`~/.craft-agent/workspaces/{workspace}/sources/${args.sourceSlug}/config.json\`\nor for global sources:\n\`~/.craft-agent/global-sources/${args.sourceSlug}/config.json\`\n\nSee \`${DOC_REFS.sources}\` for config format.`,
             }],
             isError: true,
           };
         }
-        
+
+        const { config: source, isGlobal: sourceIsGlobal } = sourceResult;
         const results: string[] = [];
         const warnings: string[] = [];
         let hasErrors = false;
+
+        // Show if this is a global source
+        if (sourceIsGlobal) {
+          results.push('**🌍 Global Source** (available in all workspaces)');
+          results.push('');
+        }
 
         // ============================================================
         // Step 1: Schema Validation
@@ -809,16 +821,20 @@ After creating or editing a source's config.json, run this tool to:
         // Step 2: Icon Handling
         // Uses unified icon system: local file > URL (downloaded) > emoji
         // ============================================================
-        const { getSourcePath, findSourceIcon, downloadSourceIcon, isIconUrl } = await import('../sources/storage.ts');
-        const sourcePath = getSourcePath(workspaceRootPath, args.sourceSlug);
+        const { getSourcePath, findSourceIcon, downloadSourceIcon, isIconUrl, findGlobalSourceIcon, downloadGlobalSourceIcon, getGlobalSourcePath } = await import('../sources/storage.ts');
+        const sourcePath = sourceIsGlobal ? getGlobalSourcePath(args.sourceSlug) : getSourcePath(workspaceRootPath, args.sourceSlug);
 
-        // Check for local icon file first (auto-discovered)
-        const localIcon = findSourceIcon(workspaceRootPath, args.sourceSlug);
+        // Check for local icon file first (auto-discovered) - handle both global and workspace sources
+        const localIcon = sourceIsGlobal
+          ? findGlobalSourceIcon(args.sourceSlug)
+          : findSourceIcon(workspaceRootPath, args.sourceSlug);
         if (localIcon) {
           results.push(`**✓ Icon Found** (${localIcon.split('/').pop()})`);
         } else if (source.icon && isIconUrl(source.icon)) {
           // URL icon - download it
-          const iconPath = await downloadSourceIcon(workspaceRootPath, args.sourceSlug, source.icon);
+          const iconPath = sourceIsGlobal
+            ? await downloadGlobalSourceIcon(args.sourceSlug, source.icon)
+            : await downloadSourceIcon(workspaceRootPath, args.sourceSlug, source.icon);
           if (iconPath) {
             results.push(`**✓ Icon Downloaded** (${iconPath.split('/').pop()})`);
           } else {
@@ -841,7 +857,7 @@ After creating or editing a source's config.json, run this tool to:
               if (iconPath) {
                 // Store the URL for future reference
                 source.icon = logoUrl;
-                saveSourceConfig(workspaceRootPath, source);
+                saveSourceConfigToLocation(workspaceRootPath, source, sourceIsGlobal);
                 results.push(`**✓ Icon Auto-fetched**`);
               } else {
                 results.push('**○ No Icon** (auto-fetch failed)');
@@ -934,7 +950,7 @@ After creating or editing a source's config.json, run this tool to:
             source.connectionStatus = 'failed';
             source.connectionError = result.error;
           }
-          saveSourceConfig(workspaceRootPath, source);
+          saveSourceConfigToLocation(workspaceRootPath, source, sourceIsGlobal);
 
           if (result.success) {
             results.push(`**✓ API Connected** (${result.status})`);
@@ -985,13 +1001,13 @@ After creating or editing a source's config.json, run this tool to:
             source.connectionStatus = 'connected';
             source.connectionError = undefined;
             source.isAuthenticated = true; // Local sources don't require auth
-            saveSourceConfig(workspaceRootPath, source);
+            saveSourceConfigToLocation(workspaceRootPath, source, sourceIsGlobal);
             results.push(`**✓ Local Path Exists** (${localPath})`);
           } else {
             hasErrors = true;
             source.connectionStatus = 'failed';
             source.connectionError = 'Path not found';
-            saveSourceConfig(workspaceRootPath, source);
+            saveSourceConfigToLocation(workspaceRootPath, source, sourceIsGlobal);
             results.push(`**❌ Local Path Not Found** (${localPath || 'not configured'})`);
           }
         }
@@ -1021,7 +1037,7 @@ After creating or editing a source's config.json, run this tool to:
                 source.connectionStatus = 'connected';
                 source.connectionError = undefined;
                 source.isAuthenticated = true; // Stdio sources don't need auth
-                saveSourceConfig(workspaceRootPath, source);
+                saveSourceConfigToLocation(workspaceRootPath, source, sourceIsGlobal);
 
                 results.push('**✓ Stdio MCP Server Connected**');
                 results.push(`  Command: ${source.mcp.command}`);
@@ -1039,7 +1055,7 @@ After creating or editing a source's config.json, run this tool to:
                 hasErrors = true;
                 source.connectionStatus = 'failed';
                 source.connectionError = stdioResult.error || 'Unknown error';
-                saveSourceConfig(workspaceRootPath, source);
+                saveSourceConfigToLocation(workspaceRootPath, source, sourceIsGlobal);
 
                 results.push('**❌ Stdio MCP Server Failed**');
                 results.push(`  Command: ${source.mcp.command}`);
@@ -1113,7 +1129,7 @@ After creating or editing a source's config.json, run this tool to:
                 if (source.mcp?.authType === 'none') {
                   source.isAuthenticated = true;
                 }
-                saveSourceConfig(workspaceRootPath, source);
+                saveSourceConfigToLocation(workspaceRootPath, source, sourceIsGlobal);
 
                 results.push('**✓ MCP Connected**');
                 if (mcpResult.serverInfo) {
@@ -1142,7 +1158,7 @@ After creating or editing a source's config.json, run this tool to:
               } else if (mcpResult.errorType === 'needs-auth') {
                 source.connectionStatus = 'needs_auth';
                 source.connectionError = getValidationErrorMessage(mcpResult, { transport: source.mcp?.transport });
-                saveSourceConfig(workspaceRootPath, source);
+                saveSourceConfigToLocation(workspaceRootPath, source, sourceIsGlobal);
                 results.push('**⚠ MCP Needs Authentication**');
                 results.push('Use `source_oauth_trigger` to authenticate.');
               } else {
@@ -1150,7 +1166,7 @@ After creating or editing a source's config.json, run this tool to:
                 source.connectionStatus = 'failed';
                 const errorMsg = getValidationErrorMessage(mcpResult, { transport: source.mcp?.transport });
                 source.connectionError = errorMsg;
-                saveSourceConfig(workspaceRootPath, source);
+                saveSourceConfigToLocation(workspaceRootPath, source, sourceIsGlobal);
                 results.push(`**❌ MCP Connection Failed**`);
                 results.push(`  Error: ${errorMsg}`);
 
@@ -1199,6 +1215,104 @@ After creating or editing a source's config.json, run this tool to:
           content: [{
             type: 'text' as const,
             text: `Error testing source: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          }],
+          isError: true,
+        };
+      }
+    }
+  );
+}
+
+/**
+ * Create a session-scoped source_toggle_global tool.
+ * Moves sources between workspace-specific and global (all workspaces).
+ */
+export function createSourceToggleGlobalTool(sessionId: string, workspaceRootPath: string) {
+  return tool(
+    'source_toggle_global',
+    `Toggle a source between workspace-specific and global scope.
+
+**Global sources** are available in ALL workspaces automatically.
+**Workspace sources** are only available in the current workspace.
+
+**Usage:**
+- To make a workspace source global: \`source_toggle_global({ sourceSlug: "my-api" })\`
+- To make a global source workspace-specific: \`source_toggle_global({ sourceSlug: "my-api" })\`
+
+The tool automatically detects the current location and moves it to the opposite location.
+
+**Note:** If a source with the same slug already exists in the target location, the move will fail.`,
+    {
+      sourceSlug: z.string().describe('The slug of the source to toggle'),
+    },
+    async (args) => {
+      debug('[source_toggle_global] Toggling source:', args.sourceSlug);
+
+      try {
+        const { moveSourceToGlobal, moveSourceToWorkspace, isGlobalSource, loadSourceConfig, loadGlobalSourceConfig } = await import('../sources/storage.ts');
+
+        // Check if source exists and where
+        const isGlobal = isGlobalSource(args.sourceSlug);
+        const workspaceConfig = loadSourceConfig(workspaceRootPath, args.sourceSlug);
+        const globalConfig = loadGlobalSourceConfig(args.sourceSlug);
+
+        if (!workspaceConfig && !globalConfig) {
+          return {
+            content: [{
+              type: 'text' as const,
+              text: `Source '${args.sourceSlug}' not found in workspace or global sources.`,
+            }],
+            isError: true,
+          };
+        }
+
+        if (isGlobal) {
+          // Move from global to workspace
+          const success = moveSourceToWorkspace(workspaceRootPath, args.sourceSlug);
+          if (success) {
+            return {
+              content: [{
+                type: 'text' as const,
+                text: `**✓ Source '${args.sourceSlug}' moved to workspace**\n\nIt is now only available in this workspace.\n\nLocation: \`~/.craft-agent/workspaces/{workspace}/sources/${args.sourceSlug}/\``,
+              }],
+              isError: false,
+            };
+          } else {
+            return {
+              content: [{
+                type: 'text' as const,
+                text: `Failed to move source '${args.sourceSlug}' to workspace. A source with the same slug may already exist in this workspace.`,
+              }],
+              isError: true,
+            };
+          }
+        } else {
+          // Move from workspace to global
+          const success = moveSourceToGlobal(workspaceRootPath, args.sourceSlug);
+          if (success) {
+            return {
+              content: [{
+                type: 'text' as const,
+                text: `**✓ Source '${args.sourceSlug}' is now global**\n\nIt is now available in ALL workspaces automatically.\n\nLocation: \`~/.craft-agent/global-sources/${args.sourceSlug}/\``,
+              }],
+              isError: false,
+            };
+          } else {
+            return {
+              content: [{
+                type: 'text' as const,
+                text: `Failed to move source '${args.sourceSlug}' to global. A global source with the same slug may already exist.`,
+              }],
+              isError: true,
+            };
+          }
+        }
+      } catch (error) {
+        debug('[source_toggle_global] Error:', error);
+        return {
+          content: [{
+            type: 'text' as const,
+            text: `Error toggling source: ${error instanceof Error ? error.message : 'Unknown error'}`,
           }],
           isError: true,
         };
@@ -1281,17 +1395,18 @@ A browser window will open for the user to complete authentication.
       debug('[source_oauth_trigger] Starting OAuth for source:', args.sourceSlug);
 
       try {
-        // Load the source config
-        const source = loadSourceConfig(workspaceRootPath, args.sourceSlug);
-        if (!source) {
+        // Load the source config from either global or workspace location
+        const sourceResult = loadSourceConfigFromAnyLocation(workspaceRootPath, args.sourceSlug);
+        if (!sourceResult) {
           return {
             content: [{
               type: 'text' as const,
-              text: `Source '${args.sourceSlug}' not found. Check ~/.craft-agent/workspaces/{workspace}/sources/ for available sources.`,
+              text: `Source '${args.sourceSlug}' not found. Check ~/.craft-agent/workspaces/{workspace}/sources/ or ~/.craft-agent/global-sources/ for available sources.`,
             }],
             isError: true,
           };
         }
+        const source = sourceResult.config;
 
         if (source.type !== 'mcp') {
           return {
@@ -1411,17 +1526,18 @@ After successful authentication, the tokens are stored and the source is marked 
     },
     async (args) => {
       try {
-        // Load the source config
-        const source = loadSourceConfig(workspaceRootPath, args.sourceSlug);
-        if (!source) {
+        // Load the source config from either global or workspace location
+        const sourceResult = loadSourceConfigFromAnyLocation(workspaceRootPath, args.sourceSlug);
+        if (!sourceResult) {
           return {
             content: [{
               type: 'text' as const,
-              text: `Source '${args.sourceSlug}' not found. Check ~/.craft-agent/workspaces/{workspace}/sources/ for available sources.`,
+              text: `Source '${args.sourceSlug}' not found. Check ~/.craft-agent/workspaces/{workspace}/sources/ or ~/.craft-agent/global-sources/ for available sources.`,
             }],
             isError: true,
           };
         }
+        const source = sourceResult.config;
 
         // Verify this is a Google source
         if (source.provider !== 'google') {
@@ -1551,17 +1667,18 @@ After successful authentication, the tokens are stored and the source is marked 
     },
     async (args) => {
       try {
-        // Load the source config
-        const source = loadSourceConfig(workspaceRootPath, args.sourceSlug);
-        if (!source) {
+        // Load the source config from either global or workspace location
+        const sourceResult = loadSourceConfigFromAnyLocation(workspaceRootPath, args.sourceSlug);
+        if (!sourceResult) {
           return {
             content: [{
               type: 'text' as const,
-              text: `Source '${args.sourceSlug}' not found. Check ~/.craft-agent/workspaces/{workspace}/sources/ for available sources.`,
+              text: `Source '${args.sourceSlug}' not found. Check ~/.craft-agent/workspaces/{workspace}/sources/ or ~/.craft-agent/global-sources/ for available sources.`,
             }],
             isError: true,
           };
         }
+        const source = sourceResult.config;
 
         // Verify this is a Slack source
         if (source.provider !== 'slack') {
@@ -1706,17 +1823,18 @@ After successful authentication, the tokens are stored and the source is marked 
     },
     async (args) => {
       try {
-        // Load the source config
-        const source = loadSourceConfig(workspaceRootPath, args.sourceSlug);
-        if (!source) {
+        // Load the source config from either global or workspace location
+        const sourceResult = loadSourceConfigFromAnyLocation(workspaceRootPath, args.sourceSlug);
+        if (!sourceResult) {
           return {
             content: [{
               type: 'text' as const,
-              text: `Source '${args.sourceSlug}' not found. Check ~/.craft-agent/workspaces/{workspace}/sources/ for available sources.`,
+              text: `Source '${args.sourceSlug}' not found. Check ~/.craft-agent/workspaces/{workspace}/sources/ or ~/.craft-agent/global-sources/ for available sources.`,
             }],
             isError: true,
           };
         }
+        const source = sourceResult.config;
 
         // Verify this is a Microsoft source
         if (source.provider !== 'microsoft') {
@@ -1872,17 +1990,18 @@ source_credential_prompt({
       debug('[source_credential_prompt] Requesting credentials:', args.sourceSlug, args.mode);
 
       try {
-        // Load source to get name and validate
-        const source = loadSourceConfig(workspaceRootPath, args.sourceSlug);
-        if (!source) {
+        // Load source from either global or workspace location
+        const sourceResult = loadSourceConfigFromAnyLocation(workspaceRootPath, args.sourceSlug);
+        if (!sourceResult) {
           return {
             content: [{
               type: 'text' as const,
-              text: `Source '${args.sourceSlug}' not found. Check ~/.craft-agent/workspaces/{workspace}/sources/ for available sources.`,
+              text: `Source '${args.sourceSlug}' not found. Check ~/.craft-agent/workspaces/{workspace}/sources/ or ~/.craft-agent/global-sources/ for available sources.`,
             }],
             isError: true,
           };
         }
+        const source = sourceResult.config;
 
         // Get callbacks
         const callbacks = getSessionScopedToolCallbacks(sessionId);
@@ -2004,9 +2123,21 @@ Returns validation result with specific error messages if invalid.`,
 // ============================================================
 
 /**
- * Cache of session-scoped tool providers, keyed by sessionId.
+ * Cache of session-scoped tool providers, keyed by sessionId + options.
  */
 const sessionScopedToolsCache = new Map<string, ReturnType<typeof createSdkMcpServer>>();
+
+/**
+ * Options for session-scoped tools.
+ */
+export interface SessionScopedToolsOptions {
+  /**
+   * Include source-related tools (source_test, OAuth triggers, source_toggle_global).
+   * Set to true for source editing contexts (add source, edit source config).
+   * Default: false (regular chat sessions don't need source tools).
+   */
+  includeSourceTools?: boolean;
+}
 
 /**
  * Get the session-scoped tools provider for a session.
@@ -2014,36 +2145,52 @@ const sessionScopedToolsCache = new Map<string, ReturnType<typeof createSdkMcpSe
  *
  * @param sessionId - Unique session identifier
  * @param workspaceRootPath - Absolute path to workspace folder (e.g., ~/.craft-agent/workspaces/xxx)
+ * @param options - Optional configuration for which tools to include
  */
-export function getSessionScopedTools(sessionId: string, workspaceRootPath: string): ReturnType<typeof createSdkMcpServer> {
-  const cacheKey = `${sessionId}::${workspaceRootPath}`;
+export function getSessionScopedTools(
+  sessionId: string,
+  workspaceRootPath: string,
+  options?: SessionScopedToolsOptions
+): ReturnType<typeof createSdkMcpServer> {
+  const includeSourceTools = options?.includeSourceTools ?? false;
+  const cacheKey = `${sessionId}::${workspaceRootPath}::sources=${includeSourceTools}`;
   let cached = sessionScopedToolsCache.get(cacheKey);
   if (!cached) {
     // Create session-scoped tools that capture the sessionId and workspaceRootPath in their closures
     // Note: Source CRUD is done via standard file editing tools (Read/Write/Edit).
     // See ~/.craft-agent/docs/ for config format documentation.
-    cached = createSdkMcpServer({
-      name: 'session',
-      version: '1.0.0',
-      tools: [
-        createSubmitPlanTool(sessionId),
-        // Config validation tool
-        createConfigValidateTool(sessionId, workspaceRootPath),
-        // Skill validation tool
-        createSkillValidateTool(sessionId, workspaceRootPath),
-        // Mermaid diagram validation tool
-        createMermaidValidateTool(),
-        // Source tools: test + auth only (CRUD via file editing)
+
+    // Base tools - always included
+    const tools = [
+      createSubmitPlanTool(sessionId),
+      // Config validation tool
+      createConfigValidateTool(sessionId, workspaceRootPath),
+      // Skill validation tool
+      createSkillValidateTool(sessionId, workspaceRootPath),
+      // Mermaid diagram validation tool
+      createMermaidValidateTool(),
+    ];
+
+    // Source tools - only included when in source editing context
+    if (includeSourceTools) {
+      tools.push(
         createSourceTestTool(sessionId, workspaceRootPath),
+        createSourceToggleGlobalTool(sessionId, workspaceRootPath),
         createOAuthTriggerTool(sessionId, workspaceRootPath),
         createGoogleOAuthTriggerTool(sessionId, workspaceRootPath),
         createSlackOAuthTriggerTool(sessionId, workspaceRootPath),
         createMicrosoftOAuthTriggerTool(sessionId, workspaceRootPath),
         createCredentialPromptTool(sessionId, workspaceRootPath),
-      ],
+      );
+    }
+
+    cached = createSdkMcpServer({
+      name: 'session',
+      version: '1.0.0',
+      tools,
     });
     sessionScopedToolsCache.set(cacheKey, cached);
-    debug(`[SessionScopedTools] Created tools provider for session ${sessionId} in workspace ${workspaceRootPath}`);
+    debug(`[SessionScopedTools] Created tools provider for session ${sessionId} (sourceTools=${includeSourceTools})`);
   }
   return cached;
 }

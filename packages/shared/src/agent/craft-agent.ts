@@ -826,8 +826,9 @@ export class CraftAgent {
 
       const mcpServers: Options['mcpServers'] = isMiniAgent
         ? {
-            // Mini agents need session tools (config_validate) and docs for reference
-            session: getSessionScopedTools(sessionId, this.workspaceRootPath),
+            // Mini agents need session tools (config_validate, source tools) and docs for reference
+            // Include source tools since mini agents are used for source editing (add-source, source-config, etc.)
+            session: getSessionScopedTools(sessionId, this.workspaceRootPath, { includeSourceTools: true }),
             'craft-agents-docs': {
               type: 'http',
               url: 'https://agents.craft.do/docs/mcp',
@@ -835,8 +836,9 @@ export class CraftAgent {
           }
         : {
             preferences: getPreferencesServer(false),
-            // Session-scoped tools (SubmitPlan, source_test, etc.)
-            session: getSessionScopedTools(sessionId, this.workspaceRootPath),
+            // Session-scoped tools (SubmitPlan, config_validate, etc.) - no source tools for regular chat
+            // Source tools are only needed in source editing contexts (mini agents)
+            session: getSessionScopedTools(sessionId, this.workspaceRootPath, { includeSourceTools: false }),
             // Craft Agents documentation - always available for searching setup guides
             // This is a public Mintlify MCP server, no auth needed
             'craft-agents-docs': {

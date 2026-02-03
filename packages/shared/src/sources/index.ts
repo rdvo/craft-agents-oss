@@ -32,20 +32,38 @@ export {
   // Directory utilities
   ensureSourcesDir,
   getSourcePath,
+  // Global source directory utilities
+  getGlobalSourcesDir,
+  ensureGlobalSourcesDir,
+  getGlobalSourcePath,
   // Config operations
   loadSourceConfig,
   saveSourceConfig,
   markSourceAuthenticated,
+  // Global config operations
+  loadGlobalSourceConfig,
+  saveGlobalSourceConfig,
+  markGlobalSourceAuthenticated,
+  isGlobalSource,
+  loadSourceConfigFromAnyLocation,
+  saveSourceConfigToLocation,
+  getSourcePathFromAnyLocation,
   // Guide operations
   loadSourceGuide,
   saveSourceGuide,
+  loadGlobalSourceGuide,
+  saveGlobalSourceGuide,
   // Icon operations
   findSourceIcon,
   downloadSourceIcon,
   sourceNeedsIconDownload,
   isIconUrl,
+  findGlobalSourceIcon,
+  downloadGlobalSourceIcon,
   // Load operations
   loadSource,
+  loadGlobalSource,
+  loadGlobalSources,
   loadWorkspaceSources,
   loadAllSources,
   getEnabledSources,
@@ -55,6 +73,9 @@ export {
   createSource,
   deleteSource,
   sourceExists,
+  // Move/Toggle operations
+  moveSourceToGlobal,
+  moveSourceToWorkspace,
   // Parsing utilities
   parseGuideMarkdown,
 } from './storage.ts';

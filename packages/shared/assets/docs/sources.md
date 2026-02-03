@@ -2,6 +2,50 @@
 
 This guide explains how to configure sources (MCP servers, APIs, local filesystems) in Craft Agent.
 
+## Source Locations
+
+Sources can be stored in two locations:
+
+### Workspace Sources (Default)
+```
+~/.craft-agent/workspaces/{workspaceId}/sources/{sourceSlug}/
+├── config.json
+├── guide.md
+├── permissions.json (optional)
+└── icon.svg (or icon.png, icon.jpg)
+```
+Workspace sources are only available in the specific workspace where they're created.
+
+### Global Sources
+```
+~/.craft-agent/global-sources/{sourceSlug}/
+├── config.json
+├── guide.md
+├── permissions.json (optional)
+└── icon.svg (or icon.png, icon.jpg)
+```
+**Global sources are available in ALL workspaces automatically.** Use global sources for services you want available everywhere (e.g., GitHub, Linear, Gmail).
+
+**When to use global sources:**
+- Services you use across all projects (GitHub, Linear, Slack)
+- Shared API integrations (search APIs, documentation services)
+- Personal productivity tools (Gmail, Calendar)
+
+**When to use workspace sources:**
+- Project-specific integrations
+- Local filesystems or databases
+- Sources with workspace-specific configurations
+
+**Creating a global source:**
+When a user says "make this global" or "add as a global source", write the config files to `~/.craft-agent/global-sources/{slug}/` instead of the workspace location.
+
+**Converting existing sources:**
+Use the `source_toggle_global` tool to move sources between workspace and global:
+```
+mcp__session__source_toggle_global({ sourceSlug: "my-api" })
+```
+The tool automatically detects the current location and moves it to the opposite location.
+
 ## Source Setup Process
 
 When a user wants to add a new source, follow this conversational setup process to create a tailored, well-documented integration.

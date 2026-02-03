@@ -367,6 +367,12 @@ export interface LoadedSource {
   isBuiltin?: boolean;
 
   /**
+   * Whether this is a global source (stored in ~/.craft-agent/global-sources/).
+   * Global sources are available in all workspaces automatically.
+   */
+  isGlobal?: boolean;
+
+  /**
    * Pre-computed path to local icon file (icon.svg, icon.png, etc.) if it exists.
    * Computed during source loading so renderer doesn't need filesystem access.
    */

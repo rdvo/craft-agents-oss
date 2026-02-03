@@ -1,8 +1,12 @@
 /**
  * Source Storage
  *
- * CRUD operations for workspace-scoped sources.
- * Sources are stored at {workspaceRootPath}/sources/{sourceSlug}/
+ * CRUD operations for workspace-scoped and global sources.
+ *
+ * Workspace sources: {workspaceRootPath}/sources/{sourceSlug}/
+ * Global sources:    ~/.craft-agent/global-sources/{sourceSlug}/
+ *
+ * Global sources are available in all workspaces automatically.
  *
  * Note: All functions take `workspaceRootPath` (absolute path to workspace folder),
  * NOT a workspace slug. The `LoadedSource.workspaceId` is derived via basename().
@@ -10,6 +14,7 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, rmSync } from 'fs';
 import { join, basename } from 'path';
+import { homedir } from 'os';
 import { randomUUID } from 'crypto';
 import type {
   FolderSourceConfig,
@@ -33,6 +38,35 @@ import {
 // ============================================================
 // Directory Utilities
 // ============================================================
+
+/**
+ * Global sources directory: ~/.craft-agent/global-sources/
+ * Sources here are available in all workspaces.
+ */
+const GLOBAL_SOURCES_DIR = join(homedir(), '.craft-agent', 'global-sources');
+
+/**
+ * Get the global sources directory path
+ */
+export function getGlobalSourcesDir(): string {
+  return GLOBAL_SOURCES_DIR;
+}
+
+/**
+ * Ensure global sources directory exists
+ */
+export function ensureGlobalSourcesDir(): void {
+  if (!existsSync(GLOBAL_SOURCES_DIR)) {
+    mkdirSync(GLOBAL_SOURCES_DIR, { recursive: true });
+  }
+}
+
+/**
+ * Get path to a global source folder
+ */
+export function getGlobalSourcePath(sourceSlug: string): string {
+  return join(GLOBAL_SOURCES_DIR, sourceSlug);
+}
 
 /**
  * Get path to a source folder within a workspace
@@ -135,6 +169,144 @@ export function saveSourceConfig(
   }
 
   writeFileSync(join(dir, 'config.json'), JSON.stringify(storageConfig, null, 2));
+}
+
+// ============================================================
+// Global Source Config Operations
+// ============================================================
+
+/**
+ * Load global source config.json
+ */
+export function loadGlobalSourceConfig(sourceSlug: string): FolderSourceConfig | null {
+  const configPath = join(getGlobalSourcePath(sourceSlug), 'config.json');
+  if (!existsSync(configPath)) return null;
+
+  try {
+    const config = JSON.parse(readFileSync(configPath, 'utf-8')) as FolderSourceConfig;
+
+    // Expand path variables in local source paths for portability
+    if (config.type === 'local' && config.local?.path) {
+      config.local.path = expandPath(config.local.path);
+    }
+
+    return config;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Save global source config.json
+ * @throws Error if config is invalid
+ */
+export function saveGlobalSourceConfig(config: FolderSourceConfig): void {
+  // Validate config before writing
+  const validation = validateSourceConfig(config);
+  if (!validation.valid) {
+    const errorMessages = validation.errors.map((e) => `${e.path}: ${e.message}`).join(', ');
+    debug('[saveGlobalSourceConfig] Validation failed:', errorMessages);
+    throw new Error(`Invalid source config: ${errorMessages}`);
+  }
+
+  const dir = getGlobalSourcePath(config.slug);
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
+  }
+
+  // Convert local source paths to portable form
+  const storageConfig: FolderSourceConfig = { ...config, updatedAt: Date.now() };
+  if (storageConfig.type === 'local' && storageConfig.local?.path) {
+    storageConfig.local = {
+      ...storageConfig.local,
+      path: toPortablePath(storageConfig.local.path),
+    };
+  }
+
+  writeFileSync(join(dir, 'config.json'), JSON.stringify(storageConfig, null, 2));
+}
+
+/**
+ * Mark a global source as authenticated and connected.
+ */
+export function markGlobalSourceAuthenticated(sourceSlug: string): boolean {
+  const config = loadGlobalSourceConfig(sourceSlug);
+  if (!config) {
+    debug(`[markGlobalSourceAuthenticated] Source ${sourceSlug} not found`);
+    return false;
+  }
+
+  config.isAuthenticated = true;
+  config.connectionStatus = 'connected';
+  config.connectionError = undefined;
+
+  saveGlobalSourceConfig(config);
+  debug(`[markGlobalSourceAuthenticated] Marked ${sourceSlug} as authenticated`);
+  return true;
+}
+
+/**
+ * Check if a source slug exists as a global source
+ */
+export function isGlobalSource(sourceSlug: string): boolean {
+  return existsSync(join(getGlobalSourcePath(sourceSlug), 'config.json'));
+}
+
+/**
+ * Load source config from either global or workspace location.
+ * Checks global sources first, then workspace.
+ * Returns the config and whether it's global.
+ */
+export function loadSourceConfigFromAnyLocation(
+  workspaceRootPath: string,
+  sourceSlug: string
+): { config: FolderSourceConfig; isGlobal: boolean } | null {
+  // Check global first
+  const globalConfig = loadGlobalSourceConfig(sourceSlug);
+  if (globalConfig) {
+    return { config: globalConfig, isGlobal: true };
+  }
+  // Then workspace
+  const workspaceConfig = loadSourceConfig(workspaceRootPath, sourceSlug);
+  if (workspaceConfig) {
+    return { config: workspaceConfig, isGlobal: false };
+  }
+  return null;
+}
+
+/**
+ * Save source config to the appropriate location (global or workspace)
+ */
+export function saveSourceConfigToLocation(
+  workspaceRootPath: string,
+  config: FolderSourceConfig,
+  isGlobal: boolean
+): void {
+  if (isGlobal) {
+    saveGlobalSourceConfig(config);
+  } else {
+    saveSourceConfig(workspaceRootPath, config);
+  }
+}
+
+/**
+ * Get source path from either global or workspace location.
+ * Checks global sources first, then workspace.
+ */
+export function getSourcePathFromAnyLocation(
+  workspaceRootPath: string,
+  sourceSlug: string
+): { path: string; isGlobal: boolean } | null {
+  // Check global first
+  if (isGlobalSource(sourceSlug)) {
+    return { path: getGlobalSourcePath(sourceSlug), isGlobal: true };
+  }
+  // Then workspace
+  const workspacePath = getSourcePath(workspaceRootPath, sourceSlug);
+  if (existsSync(join(workspacePath, 'config.json'))) {
+    return { path: workspacePath, isGlobal: false };
+  }
+  return null;
 }
 
 // ============================================================
@@ -249,6 +421,37 @@ export function saveSourceGuide(
 }
 
 // ============================================================
+// Global Guide Operations
+// ============================================================
+
+/**
+ * Load and parse guide.md for a global source
+ */
+export function loadGlobalSourceGuide(sourceSlug: string): SourceGuide | null {
+  const guidePath = join(getGlobalSourcePath(sourceSlug), 'guide.md');
+  if (!existsSync(guidePath)) return null;
+
+  try {
+    const raw = readFileSync(guidePath, 'utf-8');
+    return parseGuideMarkdown(raw);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Save guide.md for a global source
+ */
+export function saveGlobalSourceGuide(sourceSlug: string, guide: SourceGuide): void {
+  const dir = getGlobalSourcePath(sourceSlug);
+  if (!existsSync(dir)) {
+    mkdirSync(dir, { recursive: true });
+  }
+
+  writeFileSync(join(dir, 'guide.md'), guide.raw);
+}
+
+// ============================================================
 // Icon Operations (uses shared utilities from utils/icon.ts)
 // ============================================================
 
@@ -290,6 +493,28 @@ export function sourceNeedsIconDownload(
 export { isIconUrl } from '../utils/icon.ts';
 
 // ============================================================
+// Global Icon Operations
+// ============================================================
+
+/**
+ * Find icon file for a global source
+ */
+export function findGlobalSourceIcon(sourceSlug: string): string | undefined {
+  return findIconFile(getGlobalSourcePath(sourceSlug));
+}
+
+/**
+ * Download an icon from a URL and save it to a global source directory.
+ */
+export async function downloadGlobalSourceIcon(
+  sourceSlug: string,
+  iconUrl: string
+): Promise<string | null> {
+  const sourceDir = getGlobalSourcePath(sourceSlug);
+  return downloadIcon(sourceDir, iconUrl, 'GlobalSources');
+}
+
+// ============================================================
 // Load Operations
 // ============================================================
 
@@ -321,6 +546,58 @@ export function loadSource(workspaceRootPath: string, sourceSlug: string): Loade
 }
 
 /**
+ * Load a complete global source with all files.
+ * Global sources use 'global' as the workspaceId for credential lookups.
+ * @param sourceSlug - Source folder name
+ * @param workspaceRootPath - Workspace context (for credential inheritance)
+ */
+export function loadGlobalSource(sourceSlug: string, workspaceRootPath: string): LoadedSource | null {
+  const folderPath = getGlobalSourcePath(sourceSlug);
+  const config = loadGlobalSourceConfig(sourceSlug);
+  if (!config) return null;
+
+  // Pre-compute icon path for renderer (avoids fs access in browser)
+  const iconPath = findIconFile(folderPath);
+
+  // Global sources use 'global' as workspaceId for credential lookups
+  // but inherit the workspace context for session-specific operations
+  return {
+    config,
+    guide: loadGlobalSourceGuide(sourceSlug),
+    folderPath,
+    workspaceRootPath,
+    workspaceId: 'global',
+    iconPath,
+    isGlobal: true,
+  };
+}
+
+/**
+ * Load all global sources
+ * @param workspaceRootPath - Current workspace context (passed to each source)
+ */
+export function loadGlobalSources(workspaceRootPath: string): LoadedSource[] {
+  ensureGlobalSourcesDir();
+
+  const sources: LoadedSource[] = [];
+
+  if (!existsSync(GLOBAL_SOURCES_DIR)) return sources;
+
+  const entries = readdirSync(GLOBAL_SOURCES_DIR, { withFileTypes: true });
+
+  for (const entry of entries) {
+    if (entry.isDirectory()) {
+      const source = loadGlobalSource(entry.name, workspaceRootPath);
+      if (source) {
+        sources.push(source);
+      }
+    }
+  }
+
+  return sources;
+}
+
+/**
  * Load all sources for a workspace
  */
 export function loadWorkspaceSources(workspaceRootPath: string): LoadedSource[] {
@@ -346,16 +623,17 @@ export function loadWorkspaceSources(workspaceRootPath: string): LoadedSource[] 
 }
 
 /**
- * Get enabled sources for a workspace
+ * Get enabled sources for a workspace (includes global sources)
  */
 export function getEnabledSources(workspaceRootPath: string): LoadedSource[] {
-  return loadWorkspaceSources(workspaceRootPath).filter((s) => s.config.enabled);
+  const globalSources = loadGlobalSources(workspaceRootPath).filter((s) => s.config.enabled);
+  const workspaceSources = loadWorkspaceSources(workspaceRootPath).filter((s) => s.config.enabled);
+  return [...globalSources, ...workspaceSources];
 }
 
 /**
  * Get sources by slugs for a workspace.
- * Includes both user-configured sources from disk and builtin sources
- * (like craft-agents-docs) that don't have filesystem folders.
+ * Checks global sources, workspace sources, and builtin sources.
  */
 export function getSourcesBySlugs(workspaceRootPath: string, slugs: string[]): LoadedSource[] {
   const workspaceId = basename(workspaceRootPath);
@@ -369,7 +647,13 @@ export function getSourcesBySlugs(workspaceRootPath: string, slugs: string[]): L
       }
       continue;
     }
-    // Load user-configured source from disk
+    // Check global sources first
+    const globalSource = loadGlobalSource(slug, workspaceRootPath);
+    if (globalSource) {
+      sources.push(globalSource);
+      continue;
+    }
+    // Load workspace-specific source from disk
     const source = loadSource(workspaceRootPath, slug);
     if (source) {
       sources.push(source);
@@ -379,18 +663,21 @@ export function getSourcesBySlugs(workspaceRootPath: string, slugs: string[]): L
 }
 
 /**
- * Load all sources for a workspace INCLUDING built-in sources.
- * Built-in sources (like craft-agents-docs) are always available and merged
- * with user-configured sources from the workspace.
+ * Load all sources for a workspace INCLUDING global and built-in sources.
  *
- * Use this when the agent needs visibility into all available sources,
- * including system-provided ones that don't live on disk.
+ * Sources are merged in this order (later sources can override earlier ones with same slug):
+ * 1. Global sources (from ~/.craft-agent/global-sources/)
+ * 2. Workspace sources (from workspace/sources/)
+ * 3. Built-in sources (like craft-agents-docs)
+ *
+ * Use this when the agent needs visibility into all available sources.
  */
 export function loadAllSources(workspaceRootPath: string): LoadedSource[] {
   const workspaceId = basename(workspaceRootPath);
+  const globalSources = loadGlobalSources(workspaceRootPath);
   const userSources = loadWorkspaceSources(workspaceRootPath);
   const builtinSources = getBuiltinSources(workspaceId, workspaceRootPath);
-  return [...userSources, ...builtinSources];
+  return [...globalSources, ...userSources, ...builtinSources];
 }
 
 // ============================================================
@@ -556,6 +843,92 @@ export function sourceExists(workspaceRootPath: string, sourceSlug: string): boo
 
 // Note: SourceWithContext and wrapper functions were removed in this PR.
 // Use loadSourceConfig and saveSourceConfig directly instead.
+
+// ============================================================
+// Move/Toggle Source Location
+// ============================================================
+
+/**
+ * Move a workspace source to global (make it available in all workspaces)
+ * @returns true if moved successfully, false if source not found or already global
+ */
+export function moveSourceToGlobal(workspaceRootPath: string, sourceSlug: string): boolean {
+  const workspaceSourcePath = getSourcePath(workspaceRootPath, sourceSlug);
+  const globalSourcePath = getGlobalSourcePath(sourceSlug);
+
+  // Check source exists in workspace
+  if (!existsSync(join(workspaceSourcePath, 'config.json'))) {
+    debug(`[moveSourceToGlobal] Source ${sourceSlug} not found in workspace`);
+    return false;
+  }
+
+  // Check not already global
+  if (existsSync(join(globalSourcePath, 'config.json'))) {
+    debug(`[moveSourceToGlobal] Source ${sourceSlug} already exists as global`);
+    return false;
+  }
+
+  // Ensure global sources directory exists
+  ensureGlobalSourcesDir();
+
+  // Copy all files from workspace to global
+  const files = readdirSync(workspaceSourcePath);
+  mkdirSync(globalSourcePath, { recursive: true });
+
+  for (const file of files) {
+    const srcPath = join(workspaceSourcePath, file);
+    const destPath = join(globalSourcePath, file);
+    const content = readFileSync(srcPath);
+    writeFileSync(destPath, content);
+  }
+
+  // Delete the workspace source
+  rmSync(workspaceSourcePath, { recursive: true });
+
+  debug(`[moveSourceToGlobal] Moved ${sourceSlug} to global`);
+  return true;
+}
+
+/**
+ * Move a global source to workspace (make it workspace-specific)
+ * @returns true if moved successfully, false if source not found or not global
+ */
+export function moveSourceToWorkspace(workspaceRootPath: string, sourceSlug: string): boolean {
+  const globalSourcePath = getGlobalSourcePath(sourceSlug);
+  const workspaceSourcePath = getSourcePath(workspaceRootPath, sourceSlug);
+
+  // Check source exists as global
+  if (!existsSync(join(globalSourcePath, 'config.json'))) {
+    debug(`[moveSourceToWorkspace] Global source ${sourceSlug} not found`);
+    return false;
+  }
+
+  // Check not already in workspace
+  if (existsSync(join(workspaceSourcePath, 'config.json'))) {
+    debug(`[moveSourceToWorkspace] Source ${sourceSlug} already exists in workspace`);
+    return false;
+  }
+
+  // Ensure workspace sources directory exists
+  ensureSourcesDir(workspaceRootPath);
+
+  // Copy all files from global to workspace
+  const files = readdirSync(globalSourcePath);
+  mkdirSync(workspaceSourcePath, { recursive: true });
+
+  for (const file of files) {
+    const srcPath = join(globalSourcePath, file);
+    const destPath = join(workspaceSourcePath, file);
+    const content = readFileSync(srcPath);
+    writeFileSync(destPath, content);
+  }
+
+  // Delete the global source
+  rmSync(globalSourcePath, { recursive: true });
+
+  debug(`[moveSourceToWorkspace] Moved ${sourceSlug} from global to workspace`);
+  return true;
+}
 
 // ============================================================
 // Re-export parseGuideMarkdown for use in other modules
