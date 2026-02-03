@@ -1154,6 +1154,10 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
 
   // Handle structured input responses (permissions and credentials)
   const handleStructuredResponse = (response: StructuredResponse) => {
+    console.log('[ChatDisplay] handleStructuredResponse called:', response.type, response)
+    console.log('[ChatDisplay] pendingCredential:', pendingCredential)
+    console.log('[ChatDisplay] onRespondToCredential:', !!onRespondToCredential)
+
     if (response.type === 'permission' && pendingPermission && onRespondToPermission) {
       const permResponse = response as PermissionResponse
       onRespondToPermission(
@@ -1163,6 +1167,7 @@ export const ChatDisplay = React.forwardRef<ChatDisplayHandle, ChatDisplayProps>
         permResponse.alwaysAllow
       )
     } else if (response.type === 'credential' && pendingCredential && onRespondToCredential) {
+      console.log('[ChatDisplay] Calling onRespondToCredential')
       const credResponse = response as CredentialResponse
       onRespondToCredential(
         pendingCredential.sessionId,
