@@ -29,9 +29,16 @@ export function CredentialRequest({ request, onResponse, unstyled = false }: Cre
   const [showPassword, setShowPassword] = useState(false)
 
   const isBasicAuth = request.mode === 'basic'
+
+  // Validation: require at least 1 non-whitespace character
   const isValid = isBasicAuth
-    ? !!(username.trim() && password.trim())
-    : !!value.trim()
+    ? username.trim().length > 0 && password.trim().length > 0
+    : value.trim().length > 0
+
+  // Debug logging
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[CredentialRequest] value:', value, 'isValid:', isValid, 'valueLength:', value.length, 'trimmedLength:', value.trim().length)
+  }
 
   const handleSubmit = useCallback(() => {
     if (!isValid) return
